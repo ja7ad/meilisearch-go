@@ -96,8 +96,12 @@ func newClient(cli *http.Client, host, apiKey string, cfg *clientConfig) *client
 }
 
 func (c *client) executeRequest(ctx context.Context, req *internalRequest) error {
-	if req.acceptedContentType == contentTypeNDJSON && req.withResponse != nil {
-		if _, err := validateNDJSONDestination(req.functionName, req.withResponse); err != nil {
+	isNDJSON := req.acceptedContentType == contentTypeNDJSON && req.withResponse != nil
+	var ndjsonSlice reflect.Value
+	var err error
+
+	if isNDJSON {
+		if ndjsonSlice, err = validateNDJSONDestination(req.functionName, req.withResponse); err != nil {
 			return err
 		}
 	}
@@ -126,8 +130,8 @@ func (c *client) executeRequest(ctx context.Context, req *internalRequest) error
 
 	internalError.StatusCode = resp.StatusCode
 
-	if req.acceptedContentType == contentTypeNDJSON && req.withResponse != nil {
-		return c.handleNDJSONResponse(req, resp, internalError)
+	if isNDJSON {
+		return c.handleNDJSONResponse(req, resp, internalError, ndjsonSlice)
 	}
 
 	b, err := io.ReadAll(resp.Body)
@@ -152,12 +156,8 @@ func (c *client) executeRequest(ctx context.Context, req *internalRequest) error
 	return nil
 }
 
-func (c *client) handleNDJSONResponse(req *internalRequest, resp *http.Response, internalError *Error) error {
-	sliceValue, err := validateNDJSONDestination(req.functionName, req.withResponse)
-	if err != nil {
-		return err
-	}
-
+func (c *client) handleNDJSONResponse(req *internalRequest, resp *http.Response,
+	internalError *Error, sliceValue reflect.Value) error {
 	if err := c.handleStreamingStatusCode(req, resp, internalError); err != nil {
 		return err
 	}
@@ -267,7 +267,7 @@ func validateNDJSONDestination(functionName string, dst interface{}) (reflect.Va
 func validateContentType(functionName, expectedContentType, contentType string) error {
 	normalizedExpected := strings.ToLower(strings.TrimSpace(expectedContentType))
 	normalized := strings.ToLower(strings.TrimSpace(contentType))
-	if strings.HasPrefix(normalized, normalizedExpected) {
+	if normalized == normalizedExpected || strings.HasPrefix(normalized, normalizedExpected+";") {
 		return nil
 	}
 	return fmt.Errorf("%s: unexpected Content-Type %q, expected %q", functionName, contentType, expectedContentType)
