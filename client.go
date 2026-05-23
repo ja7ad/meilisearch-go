@@ -496,6 +496,9 @@ func (c *client) buildBody(req *internalRequest, internalError *Error) (io.ReadC
 			if bufFromPool {
 				c.bufferPool.Put(buf)
 			}
+			if rc, ok := body.(io.Closer); ok {
+				_ = rc.Close()
+			}
 			if err != nil {
 				return nil, internalError.WithErrCode(ErrCodeMarshalRequest,
 					fmt.Errorf("failed to encode request body: %w", err))
