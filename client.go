@@ -97,7 +97,7 @@ func newClient(cli *http.Client, host, apiKey string, cfg *clientConfig) *client
 
 func (c *client) executeRequest(ctx context.Context, req *internalRequest) error {
 	if req.acceptedContentType == contentTypeNDJSON && req.withResponse != nil {
-		if _, _, err := validateNDJSONDestination(req.functionName, req.withResponse); err != nil {
+		if _, err := validateNDJSONDestination(req.functionName, req.withResponse); err != nil {
 			return err
 		}
 	}
@@ -153,7 +153,7 @@ func (c *client) executeRequest(ctx context.Context, req *internalRequest) error
 }
 
 func (c *client) handleNDJSONResponse(req *internalRequest, resp *http.Response, internalError *Error) error {
-	sliceValue, _, err := validateNDJSONDestination(req.functionName, req.withResponse)
+	sliceValue, err := validateNDJSONDestination(req.functionName, req.withResponse)
 	if err != nil {
 		return err
 	}
@@ -246,22 +246,22 @@ func (c *client) handleContentType(req *internalRequest, resp *http.Response, in
 	return nil
 }
 
-func validateNDJSONDestination(functionName string, dst interface{}) (reflect.Value, reflect.Type, error) {
+func validateNDJSONDestination(functionName string, dst interface{}) (reflect.Value, error) {
 	if dst == nil {
-		return reflect.Value{}, nil, fmt.Errorf("%s: dst must be a non-nil pointer to a slice", functionName)
+		return reflect.Value{}, fmt.Errorf("%s: dst must be a non-nil pointer to a slice", functionName)
 	}
 
 	dstValue := reflect.ValueOf(dst)
 	if dstValue.Kind() != reflect.Ptr || dstValue.IsNil() {
-		return reflect.Value{}, nil, fmt.Errorf("%s: dst must be a non-nil pointer to a slice", functionName)
+		return reflect.Value{}, fmt.Errorf("%s: dst must be a non-nil pointer to a slice", functionName)
 	}
 
 	sliceValue := dstValue.Elem()
 	if sliceValue.Kind() != reflect.Slice {
-		return reflect.Value{}, nil, fmt.Errorf("%s: dst must point to a slice, got %s", functionName, sliceValue.Kind())
+		return reflect.Value{}, fmt.Errorf("%s: dst must point to a slice, got %s", functionName, sliceValue.Kind())
 	}
 
-	return sliceValue, sliceValue.Type().Elem(), nil
+	return sliceValue, nil
 }
 
 func validateContentType(functionName, expectedContentType, contentType string) error {
