@@ -156,6 +156,14 @@ func TestExecuteRequest(t *testing.T) {
 			retryCount++
 		} else if r.URL.Path == "/dummy" {
 			w.WriteHeader(http.StatusOK)
+		} else if r.Method == http.MethodGet && r.URL.Path == "/test-ndjson" {
+			w.Header().Set("Content-Type", contentTypeNDJSON)
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte("{\"message\":\"msg1\"}\n{\"message\":\"msg2\"}"))
+		} else if r.Method == http.MethodGet && r.URL.Path == "/test-wrong-content-type" {
+			w.Header().Set("Content-Type", "text/plain")
+			w.WriteHeader(http.StatusOK)
+			_, _ = w.Write([]byte(`{"message":"get successful"}`))
 		} else {
 			w.WriteHeader(http.StatusNotFound)
 		}
@@ -463,6 +471,42 @@ func TestExecuteRequest(t *testing.T) {
 			contentEncoding: GzipEncoding,
 			wantErr:         true,
 		},
+		{
+			name: "Successful NDJSON request",
+			internalReq: &internalRequest{
+				endpoint:            "/test-ndjson",
+				method:              http.MethodGet,
+				acceptedContentType: contentTypeNDJSON,
+				withResponse:        &[]mockResponse{},
+				acceptedStatusCodes: []int{http.StatusOK},
+			},
+			expectedResp: &[]mockResponse{{Message: "msg1"}, {Message: "msg2"}},
+			wantErr:      false,
+		},
+		{
+			name: "NDJSON request with invalid destination",
+			internalReq: &internalRequest{
+				endpoint:            "/test-ndjson",
+				method:              http.MethodGet,
+				acceptedContentType: contentTypeNDJSON,
+				withResponse:        &mockResponse{}, // Intentionally not a slice pointer
+				acceptedStatusCodes: []int{http.StatusOK},
+			},
+			expectedResp: nil,
+			wantErr:      true,
+		},
+		{
+			name: "Request with unexpected content type",
+			internalReq: &internalRequest{
+				endpoint:            "/test-wrong-content-type",
+				method:              http.MethodGet,
+				acceptedContentType: "application/json",
+				withResponse:        &mockResponse{},
+				acceptedStatusCodes: []int{http.StatusOK},
+			},
+			expectedResp: nil,
+			wantErr:      true,
+		},
 	}
 
 	for _, tt := range tests {
@@ -530,4 +574,59 @@ func (m mockJsonMarshaller) MarshalJSON() ([]byte, error) {
 	}{
 		Alias: Alias(m),
 	})
+}
+
+func TestValidateContentType(t *testing.T) {
+	tests := []struct {
+		name     string
+		expected string
+		actual   string
+		wantErr  bool
+	}{
+		{"Exact match", "application/json", "application/json", false},
+		{"Case insensitive match", "application/JSON", "application/json", false},
+		{"With charset", "application/json", "application/json; charset=utf-8", false},
+		{"Prefix mismatch false positive", "application/json", "application/json-patch+json", true},
+		{"Completely different", "application/json", "text/plain", true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			err := validateContentType("testFunc", tt.expected, tt.actual)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
+}
+
+func TestValidateNDJSONDestination(t *testing.T) {
+	var sliceDest []mockResponse
+	var structDest mockResponse
+	var nilDest interface{}
+
+	tests := []struct {
+		name    string
+		dst     interface{}
+		wantErr bool
+	}{
+		{"Valid slice pointer", &sliceDest, false},
+		{"Invalid struct pointer", &structDest, true},
+		{"Invalid non-pointer slice", sliceDest, true},
+		{"Invalid nil destination", nilDest, true},
+		{"Invalid nil pointer", (*[]mockResponse)(nil), true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			_, err := validateNDJSONDestination("testFunc", tt.dst)
+			if tt.wantErr {
+				require.Error(t, err)
+			} else {
+				require.NoError(t, err)
+			}
+		})
+	}
 }
